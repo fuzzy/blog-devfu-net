@@ -1,0 +1,15 @@
+---
+interface: 0.0.0.0
+port: 8080
+template: site.tmpl
+dirs:
+  base: /home/fuzzy/app
+  static: static
+  templates: templates
+  content: content
+git:
+  repo: https://git.devfu.net/fuzzy/fuzzy-devfu-net
+  interval: 60
+  webhook:
+    enable: true
+    secret: e64cfa9b4e545073a75dfa28bef4ade6
