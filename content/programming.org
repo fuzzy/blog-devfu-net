@@ -1,0 +1,6 @@
+* [[/emacs/][Emacs]]
+
+Emacs is my development environment of choice. As such, over the years, I've built up a bit of configurations for it.
+Not nearly as much as some people I know, and more than others. But regardless I decided to document my configurations
+and workflows. I'm doing this for a few reasons. One, it's good to keep in the habit of documenting things. Two, I'm 
+getting older. Third, is the hope that someone will see what I'm doing, realize that I'm doing it wrong, and correct me.

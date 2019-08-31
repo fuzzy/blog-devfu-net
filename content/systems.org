@@ -1,0 +1,12 @@
+* [[/systems/docker-gitea-drone-pipeline.org][Easy CI/CD]]
+
+This is exactly what it says on the tin. Using Docker's swarm-mode, Gitea, and DroneCI you can quickly
+and easily setup a CI/CD pipeline that will handle anything you throw at it (probably). And you can even
+do this on ARM(64)!! Build a cluster on your desk, test your code and deployments for fun and profit!!
+
+* [[/systems/automated-monitoring-with-nagios.org][Automated Monitoring]]
+
+Build out GitOps automated monitoring with Gitea, DroneCI, Ansible, and Docker. Once you standardize on
+the checks you want to do, configuring monitoring can be done through an ansible playbook, and a jinja2
+template and a CI/CD pipeline. Just add a host to the inventory, add host variables to define what checks
+you want, and commit to the repo. It's that simple.

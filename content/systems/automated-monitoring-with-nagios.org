@@ -1,0 +1,202 @@
+#+title: Monitoring with Nagios+Docker+SaltStack
+#+author: Mike 'Fuzzy' Partin
+
+* Monitoring with Nagios+Docker+SaltStack
+
+Let's start this off with figuring out why I chose Nagios. First and foremost, templating makes config
+files easy, and Nagios runs off of config files! Nagios is reliable and well known, it's been around
+forever and has a knowledgable neckbeard community. I myself being an old crusty UNIX neckbeard, this
+fits in very well with my world view. Perhaps most importantly is Nagios is written in C. Sensu and 
+other tools are very featureful and powerful, but the languages they're written in give me pause. Let
+me explain why. Ruby (which Sensu is written in) isn't very good at being memory efficient. Don't
+believe me? Write a simple prime sieve in ruby and python, profile them both, and py will use around
+7-9MB while ruby goes well over 100MB. This is untennable for me specifically, because I use small 
+arm64 SBC's as my docker nodes, and RAM is one of the resources that is at a premium. As such, for me
+usually the smallest footprint wins. Nagios, you win baby. (There are probably solutions that can be
+had that have a smaller footprint than nagios, but I don't know of any who also have the tenure and
+user community to rival Nagios)
+
+So with all that out of the way...
+
+This is the first in a three part series where we will build [[https://nagios.com][Nagios]] as our monitoring solution, we
+will deploy it with the help of [[http://docker.com][Docker]], and we will automate it's configuration with the help of our
+good friend [[https://www.ansible.com][Ansible]]. The finished product here isn't intended to be generic that anyone can use. It's
+opinionated. Very much so in fact. It's designed for my setup. My assumption is that you can use this
+as a starting point
+
+** Building the Docker image
+
+I've decided to build everything on an [[https://alpinelinux.org][Alpine Linux]] base image, to make sure things are as tight as
+we can get them. No reason to put a full [[https://www.debian.org][Debian GNU/Linux]] distribution in place, when we have to option
+to be streamlined. So our Dockerfile would begin with an image declaration, and getting the system
+packages all caught up, and whatever dependencies we need installed.
+
+*** Prepping the base
+
+#+BEGIN_SRC Dockerfile
+FROM alpine
+
+RUN apk update ; apk upgrade
+RUN apk add gcc g++ binutils musl-dev openssl-dev wget openssh libgd perl-dev make python \
+bind-tools rpcbind net-snmp net-snmp-dev net-snmp-libs linux-headers unzip git \
+net-snmp-tools libpng-dev freetype-dev libwebp-dev libbz2 libjpeg-turbo-dev \
+rrdtool-utils rrdtool rrdtool-dev mariadb-dev postgresql-dev
+#+END_SRC
+
+*** Users and groups
+
+There exists, within the Nagios source, a 'make' target for setting up the users and groups. But since
+I'm using shared persistent storage across all of my swarm nodes I want to specify the UID/GID to ensure
+I can set proper permissions. I realize this could be done in a more generic way, by using environment
+variables in the Dockerfile, but this shows the concept, and since it's my own opinionated setup, I don't
+really need it. Thus, usage of environment variables in this context will be left as an excercise to
+the reader. You will also notice I tend to spell things out explicitly on each line, I find more explicit
+generally equals less confusion.
+
+#+BEGIN_SRC Dockerfile
+RUN addgroup -g 667 nagios
+RUN adduser -u 667 -g 667 -S -D nagios
+#+END_SRC
+
+*** Build and install Nagios4
+
+Nagios has been around for a bit, and as such, has had alot of active development over the years. Things
+for the most part are pretty streamlined. This includes the build process which we get the privilege of
+going through now.
+
+#+BEGIN_SRC Dockerfile
+RUN cd /tmp;wget https://assets.nagios.com/downloads/nagioscore/releases/nagios-4.4.3.tar.gz
+RUN tar -zxf /tmp/nagios-4.4.3.tar.gz -C /tmp
+RUN cd /tmp/nagios-4.4.3;./configure && make -j2 all
+RUN cd /tmp/nagios-4.4.3;for tgt in " " -config -commandmode; do make install${tgt}; done
+RUN rm -rf /tmp/nagios-4.4.3*
+#+END_SRC
+
+*** (Optional) Build and install NagVis
+
+*** Configure Apache
+
+Now we need to install apache, php and all the fun stuff. We simply add a new section to our Dockerfile
+detailing the packages we want to install. Like so:
+
+#+BEGIN_SRC Dockerfile
+RUN apk add apache2 php7-apache2 apache2-icons php7
+#+END_SRC
+
+We'll also need to configure the apache instance. We'll setup our config files as simply and directly
+as possible. We can always iterate our way to complexity, but if you start there...well...I swear I
+had some pithy saying for this.
+
+We'll start this by chaning our path from /nagios to / in nagios it'self:
+
+#+BEGIN_SRC Dockerfile
+RUN sed -i.bak -e 's,url_html_path=/nagios,url_html_path=/,g' /usr/local/nagios/etc/cgi.cfg
+#+END_SRC
+
+And then let's get started on nginx. We'll start by making sure that we setup logging.
+
+#+BEGIN_SRC Dockerfile
+RUN mkdir -p /var/log/nginx && chown nginx:nginx /var/log/nginx
+RUN ln -sf /dev/stdout /var/log/nginx/access.log && ln -sf /dev/stderr /var/log/nginx/error.log
+#+END_SRC
+
+Next let's create our nginx.conf:
+
+#+BEIN_SRC
+user nginx;
+worker_processes auto;
+pcre_jit on;
+error_log /var/log/nginx/error.log warn;
+include /etc/nginx/modules/*.conf;
+
+events {
+	worker_connections 1024;
+}
+
+http {
+	include /etc/nginx/mime.types;
+	default_type application/octet-stream;
+	server_tokens off;
+	client_max_body_size 1m;
+	keepalive_timeout 65;
+	sendfile on;
+	tcp_nodelay on;
+	#tcp_nopush on;
+	#gzip on;
+	gzip_vary on;
+	#gzip_static on;
+	log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+			'$status $body_bytes_sent "$http_referer" '
+			'"$http_user_agent" "$http_x_forwarded_for"';
+	access_log /var/log/nginx/access.log main;
+  upstream php {
+    server unix:/var/run/php7-fpm.socket;
+  }
+  upstream fcgiwrap {
+    server unix:/var/run/fcgiwrap.socket;
+  }
+  include /etc/nginx/conf.d/*.conf;
+}
+#+END_SRC
+
+And let's reference that in our Dockerfile.
+
+#+BEGIN_SRC Dockerfile
+ADD nginx.conf /etc/nginx/nginx.conf
+#+END_SRC
+
+Now let's get the nagios site configuration in place. We'll put this into a file called nagios.conf
+in /etc/nginx/conf.d/.
+
+#+BEGIN_SRC
+server {
+  listen   80;
+  server_name  nag.devfu.net;
+ 
+  access_log  /var/log/nginx/access.log;
+  error_log   /var/log/nginx/error.log info;
+ 
+  expires 31d;
+ 
+  root /usr/local/nagios/share;
+  index index.php index.html;
+ 
+  auth_basic "Nagios Restricted Access";
+  auth_basic_user_file /usr/local/nagios/etc/htpasswd.users;
+ 
+  location ~ \.cgi$ {
+    root /usr/local/nagios/sbin;
+    rewrite ^/nagios/cgi-bin/(.*)$ /$1;
+    include /etc/nginx/fastcgi_params;
+ 
+    fastcgi_param AUTH_USER $remote_user;
+    fastcgi_param REMOTE_USER $remote_user;
+    fastcgi_param SCRIPT_FILENAME /usr/local/nagios/sbin/$fastcgi_script_name;
+    fastcgi_pass fcgiwrap;
+  }
+ 
+  location ~ \.php$ {
+    include /etc/nginx/fastcgi_params;
+    fastcgi_pass php;
+  }
+}
+#+END_SRC
+
+After saving that to nagios.conf we'll reference it in our Dockerfile, we're nearly done with this
+part. And, I must say, things are moving quite smoothly.
+
+#+BEGIN_SRC Dockerfile
+ADD nagios.conf /etc/nginx/conf.d/
+#+END_SRC
+
+Now we can edit our php7-fpm.conf to use the socket we configured in our nginx.conf above.
+
+#+BEGIN_SRC
+sed -i.bak -e 's,127.0.0.1:9000,/var/run/php7-fpm.socket,g' /etc/php7/php-fpm.d/www.conf
+#+END_SRC
+
+*** Configure localhost checks
+
+
+** Generating the configuration with Ansible
+** Generating the configuration with SaltStack

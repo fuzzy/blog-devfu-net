@@ -1,0 +1,21 @@
+* Where you are
+
+You are in a small room, surrounded by the rantings of a madman, scribbled onto the walls. Perhaps if
+you read them long enough, you may find something worthwhile in them. Perhaps. But beware, as was once
+said by Nietzsche: "if you stare into the abyss, the abyss stares back at you".
+
+* Who am I?
+
+I am Fuzzy, the humble narrator and curator of the ravings you see before you. Please do not be alarmed
+by my resemblance to various australasian land mammals, I assure you, I've had all my shots...at least
+people have stabbed me with implements many times.
+
+* Why would you do this?
+
+Well, because I wrote 'smore' which renders Org and Markdown documents to HTML on the fly, and I needed
+to make sure there was a valid test case for it. Also because I wanted to. At least I had the decency to
+hide my rantings off in a private corner of the internet instead of inflicting them on the world at large.
+
+* Why should I read any of this?
+
+I have no compelling answer for that.
